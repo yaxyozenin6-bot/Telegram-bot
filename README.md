@@ -3,8 +3,11 @@ from telebot import types
 import json
 import os
 import random
+import re
+import time
 
-TOKEN = '8071863367:AAG5oeoSfrpGUFt7T2nzCXlVnOIAkxZWkqo'
+# To'g'ridan-to'g'ri token va admin ID ni shu yerga yozing
+TOKEN = "8247262403:AAF_nATMQdTUTjIJa2RX3w9jcqV4IU8L1L4"
 ADMIN_ID = 7569090252
 
 bot = telebot.TeleBot(TOKEN)
@@ -12,6 +15,12 @@ DATA_FILE = 'videos.json'
 
 search_mode = {}
 user_recommendations = {}
+
+blocked_users = set()  # Bloklangan foydalanuvchilar
+
+# Matnni tekshirish uchun funktsiya (faqat harflar, raqamlar, probel va ba'zi belgilar)
+def is_valid_text(text):
+    return bool(re.match(r'^[\w\s\-.,!?]+$', text))
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -23,6 +32,12 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# Bloklangan foydalanuvchilar uchun javob
+@bot.message_handler(func=lambda message: message.from_user.id in blocked_users)
+def blocked_user_handler(message):
+    bot.reply_to(message, "❌ Siz bloklangansiz va botdan foydalanish imkoniyatingiz yo‘q.")
+
+# /start komandasi
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -33,40 +48,70 @@ def send_welcome(message):
                      "Assalomu alaykum! Quyidagi bo‘limlardan birini tanlang:",
                      reply_markup=markup)
 
+# 🔍 Anime izlash
 @bot.message_handler(func=lambda message: message.text == "🔍 Anime izlash")
 def handle_anime(message):
     bot.send_message(message.chat.id, "Qaysi anime kerak? Ismini yozing...")
     search_mode[message.chat.id] = True
 
+# 🎁 Konkurs
 @bot.message_handler(func=lambda message: message.text == "🎁 Konkurs")
 def handle_konkurs(message):
     bot.send_message(message.chat.id, "Hozircha aktiv konkurslar yo‘q.")
 
+# 📢 E’lonlar
 @bot.message_handler(func=lambda message: message.text == "📢 E’lonlar")
 def handle_elon(message):
     bot.send_message(message.chat.id, "So‘nggi e’lonlar: hech narsa yo'q.")
 
+# 📗 Qo‘llanma
 @bot.message_handler(func=lambda message: message.text == "📗 Qo‘llanma")
 def handle_qollanma(message):
     bot.send_message(message.chat.id, "Botdan foydalanish bo‘yicha qo‘llanma...")
 
+# 💼 Reklama va Homiylik
 @bot.message_handler(func=lambda message: message.text == "💼 Reklama va Homiylik")
 def handle_reklama(message):
     bot.send_message(message.chat.id, "Reklama uchun @psixo_666 bilan bog‘laning.")
 
-@bot.message_handler(commands=['anime'])
-def command_anime(message):
-    text = message.text.split(maxsplit=1)
-    if len(text) == 1:
-        bot.reply_to(message, "Iltimos, anime nomini yozing. Masalan:\n/anime Naruto")
+# ⚙️ /admin komandasi
+@bot.message_handler(commands=['admin'])
+def handle_admin(message):
+    bot.reply_to(message, "🛠 Admin bilan bog‘lanish uchun: @psixo_666")
+
+# 🆘 /muammo komandasi
+@bot.message_handler(commands=['muammo'])
+def handle_muammo(message):
+    bot.send_message(message.chat.id, "❗ Iltimos, duch kelgan muammoingizni yozing:")
+    bot.register_next_step_handler(message, process_muammo)
+
+def process_muammo(message):
+    text = message.text
+    if not is_valid_text(text):
+        bot.reply_to(message, "⚠️ Muammo matni noto‘g‘ri kiritildi. Iltimos, qayta urinib ko‘ring.")
         return
-    anime_name = text[1]
-    bot.reply_to(message, f"🔍 '{anime_name}' bo‘yicha qidiryapman...")
+    user = message.from_user
+    msg = f"🆘 MUAMMO YUBORILDI\n👤 @{user.username or user.first_name} (ID: {user.id})\n📩 Muammo: {text}"
+    bot.send_message(ADMIN_ID, msg)
+    bot.reply_to(message, "✅ Muammoingiz yuborildi. Tez orada javob beramiz.")
 
-@bot.message_handler(commands=['hello'])
-def command_hello(message):
-    bot.reply_to(message, "Salom! Yordam kerak bo‘lsa, /start buyrug‘ini bosing 😊")
+# 💡 /tavsiya komandasi
+@bot.message_handler(commands=['tavsiya'])
+def handle_tavsiya(message):
+    bot.send_message(message.chat.id, "💡 Taklif yoki tavsiyangizni yozing:")
+    bot.register_next_step_handler(message, process_tavsiya)
 
+def process_tavsiya(message):
+    text = message.text
+    if not is_valid_text(text):
+        bot.reply_to(message, "⚠️ Tavsiya matni noto‘g‘ri kiritildi. Iltimos, qayta urinib ko‘ring.")
+        return
+    user = message.from_user
+    msg = f"📬 TAVSIYA YUBORILDI\n👤 @{user.username or user.first_name} (ID: {user.id})\n💡 Tavsiya: {text}"
+    bot.send_message(ADMIN_ID, msg)
+    bot.reply_to(message, "✅ Tavsiyangiz yuborildi. Rahmat!")
+
+# 🎥 Video yuklash (faqat admin)
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     if message.from_user.id != ADMIN_ID:
@@ -77,9 +122,11 @@ def handle_video(message):
 
 def save_video_info(message, file_id):
     title = message.text.strip().lower()
-    data = load_data()
+    if not is_valid_text(title):
+        bot.send_message(message.chat.id, "⚠️ Noto‘g‘ri nom kiritildi. Iltimos, faqat harflar va raqamlar ishlating.")
+        return
 
-    # Takror nomni tekshirish
+    data = load_data()
     if any(item['title'] == title for item in data):
         bot.send_message(message.chat.id, f"⚠️ '{title}' nomli video allaqachon saqlangan.")
         return
@@ -91,6 +138,7 @@ def save_video_info(message, file_id):
     save_data(data)
     bot.send_message(message.chat.id, f"✅ '{title}' nomli video saqlandi!")
 
+# 🔎 Matn bo‘yicha izlash
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     if search_mode.get(message.chat.id):
@@ -128,10 +176,11 @@ def handle_all_messages(message):
         markup.add(types.KeyboardButton("📗 Qo‘llanma"), types.KeyboardButton("💼 Reklama va Homiylik"))
         bot.send_message(
             message.chat.id,
-            "❗ Noto‘g‘ri buyruq yoki xabar. Iltimos, quyidagi menyudan tanlang:",
+            "❗ Noto‘g‘ri buyruq yoki xabar. Iltimos, menyudan tanlang:",
             reply_markup=markup
         )
 
+# ▶️ Inline video tanlash
 @bot.callback_query_handler(func=lambda call: call.data.startswith("video_"))
 def callback_video(call):
     try:
@@ -144,5 +193,21 @@ def callback_video(call):
     except (IndexError, ValueError):
         bot.answer_callback_query(call.id, "Xato: video topilmadi yoki noto'g'ri tugma.", show_alert=True)
 
-# Botni ishga tushiramiz
-bot.polling(none_stop=True)
+# Admin orqali foydalanuvchini bloklash komandasi (ixtiyoriy)
+@bot.message_handler(commands=['block'])
+def block_user(message):
+    if message.from_user.id == ADMIN_ID:
+        try:
+            user_id = int(message.text.split()[1])
+            blocked_users.add(user_id)
+            bot.send_message(message.chat.id, f"✅ {user_id} foydalanuvchi bloklandi.")
+        except:
+            bot.send_message(message.chat.id, "❗ Iltimos, to‘g‘ri ID kiriting. Misol: /block 123456789")
+
+# Botni qayta ishga tushirish bilan ishlatish
+while True:
+    try:
+        bot.polling(none_stop=True)
+    except Exception as e:
+        print(f"Xatolik yuz berdi: {e}")
+        time.sleep(15)
